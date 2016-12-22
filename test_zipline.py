@@ -13,8 +13,6 @@ def handle_data(context, data):
     if context.i < 300:
         return
 
-    import pdb
-    pdb.set_trace()
     # Compute averages
     # history() has to be called with the same params
     # from above and returns a pandas dataframe.
@@ -76,7 +74,7 @@ def analyze(results=None):
     plt.show()
 
 
-if __name__ =='__main__1':
+if __name__ =='__main__':
     from datetime import datetime
     import pytz
     import matplotlib.pyplot as plt
