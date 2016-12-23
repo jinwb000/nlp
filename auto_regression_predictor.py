@@ -1,5 +1,5 @@
 # coding=utf8
- 
+
 import sys
 import datetime
 import pytz
@@ -22,7 +22,7 @@ def similar(ndarr, hisDf, curDf, cor=0.9, onlyPositiveCorr=True):
         else:
             return 0
 
-def predict(inputHisDf, lookAheadDays=3, windowSize=20, minCorr=0.9, onlyPositiveCorr=True):
+def predict_bl(inputHisDf, lookAheadDays=3, windowSize=20, minCorr=0.9, onlyPositiveCorr=True):
     hisDf = inputHisDf.set_index('index', drop=False)
     std = pd.rolling_std(hisDf, windowSize)
     mvg = pd.rolling_mean(hisDf, windowSize)
@@ -33,13 +33,14 @@ def predict(inputHisDf, lookAheadDays=3, windowSize=20, minCorr=0.9, onlyPositiv
     if lastStd == 0:
         return 0
     diversion = (lastClose - lastMvg)/lastStd
-    if diversion > 2:
+    if diversion > 1.5:
         return -1
-    if diversion < -2:
+    if diversion < -1.5:
         return 1
+    return 0
 
- 
-def predict_ar(inputHisDf, lookAheadDays=3, windowSize=20, minCorr=0.9, onlyPositiveCorr=True):
+
+def predict(inputHisDf, lookAheadDays=3, windowSize=20, minCorr=0.9, onlyPositiveCorr=True):
     hisDf = inputHisDf.set_index('index', drop=False)
     ecurDf=hisDf[-windowSize:]
     ehisDf=hisDf[:-windowSize]
@@ -59,7 +60,7 @@ def predict_ar(inputHisDf, lookAheadDays=3, windowSize=20, minCorr=0.9, onlyPosi
         negtiveSim*=-1
         sim = pd.concat([positiveSim, negtiveSim])
         return sim.median()
- 
+
 def test(maDf, testSize=50, lookAheadDays=3, windowSize=20, minCorr=0.9, onlyPositiveCorr=True):
     right = 0.0
     unpredicable = 0.0
@@ -78,8 +79,8 @@ def test(maDf, testSize=50, lookAheadDays=3, windowSize=20, minCorr=0.9, onlyPos
         if predictedChg*realChg > 0:
             right += 1
     return unpredicable, right
- 
- 
+
+
 def prepare_data(ticker, maMethod='ema', maPeriod=20, lookAheadDays=3, start='', end='', useYahoo=False):
     if not end:
         now = datetime.datetime.now()
@@ -114,8 +115,8 @@ def prepare_data(ticker, maMethod='ema', maPeriod=20, lookAheadDays=3, start='',
         emaDf['Volume']=ta.MA(stockDf['Volume'].values, maPeriod)
     print emaDf.tail(10)
     return emaDf
- 
- 
+
+
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='predict/test using similarity-prediction')
@@ -131,7 +132,7 @@ if __name__ == '__main__':
     parser.add_argument('-o', '--onlypositivecorr', action='store_true', default=False)
     parser.add_argument('-u', '--usamarket', action='store_true', default=False)
     args = parser.parse_args()
- 
+
     df = prepare_data(args.ticker, args.mamethod, args.maperiod, lookAheadDays=args.lookahead, start=args.begin, end=args.end, useYahoo=args.usamarket)
     if args.testsize<=0:
         pred = predict(df, args.lookahead, args.window, args.mincorr, args.onlypositivecorr)

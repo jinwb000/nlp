@@ -2,7 +2,7 @@
 import datetime
 import pandas as pd
 import talib as ta
-from zipline.api import order_target, record, symbol
+from zipline.api import order, record, symbol
 from auto_regression_predictor import predict
 
 def prepare_data(ticker, maMethod='ema', maPeriod=20, lookAheadDays=3, start='', end='', useYahoo=True):
@@ -46,9 +46,9 @@ def prepare_data(ticker, maMethod='ema', maPeriod=20, lookAheadDays=3, start='',
     emaDf.set_index(pd.DatetimeIndex(emaDf['TradeDate'], tz=pytz.utc), inplace=True)
     res = pd.Panel({ticker:emaDf.dropna()})
     return res
- 
 
-def initialize(context, xdata=None, xticker=None, xstart='20130101', xend='20161207', lookahead=3, window=5, mincorr=0.9, onlypositivecorr=True):
+
+def initialize(context, xdata=None, xticker=None, xstart='20130101', xend='20161207', lookahead=1, window=5, mincorr=0.9, onlypositivecorr=True):
     context.ticker = xticker
     context.sym = symbol(xticker)
     context.i = 0
@@ -56,7 +56,13 @@ def initialize(context, xdata=None, xticker=None, xstart='20130101', xend='20161
     context.window = window
     context.mincorr = mincorr
     context.onlypositivecorr = onlypositivecorr
-    context.position = 0
+    context.pos = 0
+    context.pos_bar = 0
+    context.pos_price = 0
+    context.max_profit = 0.3
+    context.max_loss = 0.15
+    context.max_hold = 5
+    context.max_position_rate = 0.2
     if xdata is not None:
         context.data = xdata
     else:
@@ -67,22 +73,42 @@ def handle_data(context, data):
     context.i += 1
     if context.i < 500:
         return
-    
+
     df = context.data[context.ticker]
     df = df[df['TradeDate']<data.current_dt.strftime('%Y%m%d')]
     pred = predict(df, context.lookahead, context.window, context.mincorr, context.onlypositivecorr)
+    curLot = int(context.portfolio.cash*context.max_position_rate/data.current(context.sym, 'price'))
     if pred > 0:
-        if context.position <= 0:
-            order_target(context.sym, 100)
-            context.position = 100
-    elif pred <0:
-        if context.position > 0:
-            order_target(context.sym, -context.position)
-            context.position = 0
+        if context.pos <= 0:
+            order(context.sym, curLot)
+            context.pos += curLot
+            context.pos_bar = context.i
+            context.pos_price = data.current(context.sym, 'price')
+    elif pred < 0:
+        if context.pos > 0:
+            order(context.sym, -1*context.pos)
+            context.pos = 0
+            context.pos_bar = 0
+            context.pos_price = 0
+    else:
+        if context.pos > 0:
+            if context.i - context.pos_bar > context.max_hold:
+                order(context.sym, -1*context.pos)
+                context.pos = 0
+                context.pos_bar = 0
+                context.pos_price = 0
+        if context.pos > 0:
+            ret = data.current(context.sym, 'high')/context.pos_price -1
+            if ret > context.max_profit or ret < - context.max_loss:
+                order(context.sym, -1*context.pos)
+                context.pos = 0
+                context.pos_bar = 0
+                context.pos_price = 0
 
     # Save values for later inspection
     kargs = {context.ticker:data.current(context.sym, "price"),
-            'pred':pred,
+            'pred':pred*50,
+            'pos':context.pos,
             }
     record(**kargs)
 
@@ -101,12 +127,11 @@ def analyze(results=None, symbol=None):
 
     ax2 = fig.add_subplot(212)
     ax2.set_ylabel('Price (USD)')
-    
+
     # If data has been record()ed, then plot it.
     # Otherwise, log the fact that no data has been recorded.
     if (symbol in results):
-    #if ('AAPL' in results and 'short_mavg' in results and 'long_mavg' in results):
-        results['AAPL'].plot(ax=ax2)
+        results[symbol].plot(ax=ax2)
         #results[['short_mavg', 'long_mavg']].plot(ax=ax2)
 
         trans = results.ix[[t != [] for t in results.transactions]]
@@ -116,11 +141,13 @@ def analyze(results=None, symbol=None):
             [t[0]['amount'] < 0 for t in trans.transactions]]
         #ax2.plot(buys.index, results.short_mavg.ix[buys.index], '^', markersize=10, color='m')
         #ax2.plot(sells.index, results.short_mavg.ix[sells.index], 'v', markersize=10, color='k')
-        ax2.plot(buys.index, results[symbol].ix[buys.index], '^', markersize=10, color='r')
-        ax2.plot(sells.index, results[symbol].ix[sells.index], 'v', markersize=10, color='g')
+        results.pred.plot(ax=ax2)
+        results.pos.plot(ax=ax2)
+        ax2.plot(buys.index, results['pos'].ix[buys.index], '^', markersize=10, color='r')
+        ax2.plot(sells.index, results['pos'].ix[sells.index], 'v', markersize=10, color='g')
         plt.legend(loc=0)
     else:
-        msg = 'AAPL, short_mavg & long_mavg data not captured using record().'
+        msg = 'short_mavg & long_mavg data not captured using record().'
         ax2.annotate(msg, xy=(0.1, 0.5))
         log.info(msg)
 
@@ -140,21 +167,21 @@ if __name__ =='__main__':
     parser.add_argument('-m', '--mamethod', action='store', choices=['ema','ma'], default='ema', help='ma method to pre-process the Close/Volume')
     parser.add_argument('-p', '--maperiod', action='store', type=int, default=20, help='period to ma Close/Volume')
     parser.add_argument('-w', '--window', action='store', type=int, default=20, help='window size to match')
-    parser.add_argument('-a', '--lookahead', action='store', type=int, default=3, help='days to lookahead when predict')
+    parser.add_argument('-a', '--lookahead', action='store', type=int, default=1, help='days to lookahead when predict')
     parser.add_argument('-c', '--mincorr', action='store', type=float, default=0.9, help='days to lookahead when predict')
     parser.add_argument('-s', '--testsize', action='store', type=int, default=50, help='period to test')
     parser.add_argument('-b', '--begin', action='store', type=str, default='20100101', help='start of the market data')
-    parser.add_argument('-e', '--end', action='store', type=str, default='20200101', help='end of the market data')
+    parser.add_argument('-e', '--end', action='store', type=str, default='20161221', help='end of the market data')
     parser.add_argument('-o', '--onlypositivecorr', action='store_true', default=False)
     parser.add_argument('-u', '--usamarket', action='store_true', default=True)
     args = parser.parse_args()
- 
+
     #start = datetime.datetime(1990, 1, 1, 0, 0, 0, 0, pytz.utc)
     #end = datetime.datetime(2002, 1, 1, 0, 0, 0, 0, pytz.utc)
     #data = load_from_yahoo(stocks=['AAPL'], indexes={}, start=start, end=end, adjusted=False)
 
     data = prepare_data(args.ticker, args.mamethod, args.maperiod, lookAheadDays=args.lookahead, start=args.begin, end=args.end, useYahoo=args.usamarket)
 
-    algo = TradingAlgorithm(initialize=initialize, handle_data=handle_data, xdata=data, xticker=args.ticker, xstart=args.begin, xend=args.end, lookahead=args.lookahead, window=args.window, mincorr=args.mincorr, onlypositivecorr=args.onlypositivecorr)
+    algo = TradingAlgorithm(initialize=initialize, handle_data=handle_data, capital_base=50000, xdata=data, xticker=args.ticker, xstart=args.begin, xend=args.end, lookahead=args.lookahead, window=args.window, mincorr=args.mincorr, onlypositivecorr=args.onlypositivecorr)
     res = algo.run(data).dropna()
     analyze(res, args.ticker)
