@@ -25,9 +25,9 @@ def similar(ndarr, hisDf, curDf, cor=0.9, onlyPositiveCorr=True):
 def predict(inputHisDf, lookAheadDays=3, windowSize=20, minCorr=0.9, onlyPositiveCorr=True):
     trendWindow = 5
     stdGap = 1.25
-    hisDf = inputHisDf.set_index('index', drop=False).tail(windowSize)
-    pU, pM, pL = ta.BBANDS(hisDf['OrigClose'].astype(float).values, timeperiod=trendWindow, nbdevup=stdGap, nbdevdn=stdGap)
-    volU, volM, volL = ta.BBANDS(hisDf['OrigVolume'].astype(float).values, timeperiod=trendWindow, nbdevup=stdGap, nbdevdn=stdGap)
+    hisDf = inputHisDf.set_index('index', drop=False).tail(windowSize+1)
+    pU, pM, pL = ta.BBANDS(hisDf['OrigClose'].head(windowSize).astype(float).values, timeperiod=trendWindow, nbdevup=stdGap, nbdevdn=stdGap)
+    volU, volM, volL = ta.BBANDS(hisDf['OrigVolume'].head(windowSize).astype(float).values, timeperiod=trendWindow, nbdevup=stdGap, nbdevdn=stdGap)
     preP = hisDf['OrigClose'].iat[-2]
     curP = hisDf['OrigClose'].iat[-1]
 
@@ -38,10 +38,11 @@ def predict(inputHisDf, lookAheadDays=3, windowSize=20, minCorr=0.9, onlyPositiv
     pMSlope = _array_slope(pM[-trendWindow:])
     volUSlope = _array_slope(volU[-trendWindow:])
     volMSlope = _array_slope(volM[-trendWindow:])
+    if volMSlope > 0: #goes upper with larger std
+        if curP > pL[-1] and preP < pL[-1]:
+            return 1
     if curP < pU[-1] and preP > pU[-1]:
         return -1
-    elif curP > pL[-1] and preP < pL[-1]:
-        return 1
     '''
     if pUSlope > 0 and pMSlope > 0 and pUSlope-pMSlope > 0: #goes upper with larger std
         if curP > pU[-1] and preP < pU[-1]:

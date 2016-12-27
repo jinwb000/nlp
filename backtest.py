@@ -78,7 +78,7 @@ def handle_data(context, data):
     df = context.data[context.ticker]
     df = df[df['TradeDate']<data.current_dt.strftime('%Y%m%d')]
     pred = predict(df, context.lookahead, context.window, context.mincorr, context.onlypositivecorr)
-    curLot = int(context.portfolio.cash*context.max_position_rate/data.current(context.sym, 'price'))
+    curLot = int(context.portfolio.starting_cash*context.max_position_rate/data.current(context.sym, 'price'))
     if pred > 0:
         if context.pos <= 0:
             order(context.sym, curLot)
@@ -108,7 +108,7 @@ def handle_data(context, data):
 
     # Save values for later inspection
     kargs = {context.ticker:data.current(context.sym, "price"),
-            'pred':pred*10,
+            'pred':pred*5,
             'pos':context.pos,
             }
     record(**kargs)
@@ -143,10 +143,11 @@ def analyze(results=None, symbol=None):
         #ax2.plot(buys.index, results.short_mavg.ix[buys.index], '^', markersize=10, color='m')
         #ax2.plot(sells.index, results.short_mavg.ix[sells.index], 'v', markersize=10, color='k')
         results.pred.plot(ax=ax2)
-        results.pos.plot(ax=ax2)
-        ax2.plot(buys.index, results['pos'].ix[buys.index], '^', markersize=10, color='r')
-        ax2.plot(sells.index, results['pos'].ix[sells.index], 'v', markersize=10, color='g')
+        #results.pos.plot(ax=ax2)
+        ax2.plot(buys.index, results['pred'].ix[buys.index], '^', markersize=10, color='r')
+        ax2.plot(sells.index, results['pred'].ix[sells.index], 'v', markersize=10, color='g')
         plt.legend(loc=0)
+        print results
     else:
         msg = 'short_mavg & long_mavg data not captured using record().'
         ax2.annotate(msg, xy=(0.1, 0.5))
