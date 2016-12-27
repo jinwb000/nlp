@@ -22,6 +22,64 @@ def similar(ndarr, hisDf, curDf, cor=0.9, onlyPositiveCorr=True):
         else:
             return 0
 
+def predict(inputHisDf, lookAheadDays=3, windowSize=20, minCorr=0.9, onlyPositiveCorr=True):
+    trendWindow = 5
+    stdGap = 1.25
+    hisDf = inputHisDf.set_index('index', drop=False).tail(windowSize)
+    pU, pM, pL = ta.BBANDS(hisDf['OrigClose'].astype(float).values, timeperiod=trendWindow, nbdevup=stdGap, nbdevdn=stdGap)
+    volU, volM, volL = ta.BBANDS(hisDf['OrigVolume'].astype(float).values, timeperiod=trendWindow, nbdevup=stdGap, nbdevdn=stdGap)
+    preP = hisDf['OrigClose'].iat[-2]
+    curP = hisDf['OrigClose'].iat[-1]
+
+    preV = hisDf['OrigVolume'].iat[-2]
+    curV = hisDf['OrigVolume'].iat[-1]
+
+    pUSlope = _array_slope(pU[-trendWindow:])
+    pMSlope = _array_slope(pM[-trendWindow:])
+    volUSlope = _array_slope(volU[-trendWindow:])
+    volMSlope = _array_slope(volM[-trendWindow:])
+    if curP < pU[-1] and preP > pU[-1]:
+        return -1
+    elif curP > pL[-1] and preP < pL[-1]:
+        return 1
+    '''
+    if pUSlope > 0 and pMSlope > 0 and pUSlope-pMSlope > 0: #goes upper with larger std
+        if curP > pU[-1] and preP < pU[-1]:
+            return 1
+        elif curP < pU[-1] and preP > pU[-1]:
+            return -1
+        elif curP < pL[-1] and preP > pL[-1]:
+            return -1
+        elif curP > pL[-1] and preP < pL[-1]:
+            return 1
+
+    elif pUSlope < 0 and pMSlope < 0 and pUSlope-pMSlope < 0: #goes down with small std
+        if curP > pL[-1] and preP < pL[-1]:
+            return 1
+        elif curP < pL[-1] and preP > pL[-1]:
+            return -1
+    if volUSlope > 0 and volMSlope > 0 and volUSlope-volMSlope > 0:
+        if curP > pL[-1] and preP < pL[-1]:
+            return 1
+        if curP > pM[-1] and pMSlope > 0:
+            return 1
+        if curP < pU[-1] and preP > pU[-1]:
+            return -1
+        if curP < pM[-1] and pMSlope < 0:
+            return -1
+    elif volUSlope < 0 and volMSlope < 0 and volUSlope-volMSlope < 0:
+        if curP < pU[-1] and preP > pU[-1]:
+            return -1
+    '''
+    return 0
+
+def _array_slope(series):
+    if isinstance(series, list) or isinstance(series, np.ndarray):
+        series = pd.Series(series)
+    assert isinstance(series, pd.Series)
+    X = pd.Series(range(len(series)))
+    return X.corr(series)
+
 def predict_bl(inputHisDf, lookAheadDays=3, windowSize=20, minCorr=0.9, onlyPositiveCorr=True):
     hisDf = inputHisDf.set_index('index', drop=False)
     std = pd.rolling_std(hisDf, windowSize)
@@ -40,7 +98,7 @@ def predict_bl(inputHisDf, lookAheadDays=3, windowSize=20, minCorr=0.9, onlyPosi
     return 0
 
 
-def predict(inputHisDf, lookAheadDays=3, windowSize=20, minCorr=0.9, onlyPositiveCorr=True):
+def predict_ar(inputHisDf, lookAheadDays=3, windowSize=20, minCorr=0.9, onlyPositiveCorr=True):
     hisDf = inputHisDf.set_index('index', drop=False)
     ecurDf=hisDf[-windowSize:]
     ehisDf=hisDf[:-windowSize]
@@ -104,6 +162,7 @@ def prepare_data(ticker, maMethod='ema', maPeriod=20, lookAheadDays=3, start='',
         stockDf = eodM.get_eod(ticker,start,end)
     emaDf=pd.DataFrame(index=stockDf.index)
     emaDf['OrigClose']=stockDf['Close']
+    emaDf['OrigVolume']=stockDf['Volume']
     emaDf['TradeDate']=stockDf['TradeDate']
     emaDf['PctChg'] = stockDf['Close'].pct_change(periods=lookAheadDays)
     emaDf['index']=emaDf.index

@@ -29,6 +29,7 @@ def prepare_data(ticker, maMethod='ema', maPeriod=20, lookAheadDays=3, start='',
     #emaDf=pd.DataFrame(index=pd.DatetimeIndex(stockDf['TradeDate'], tz=pytz.utc))
     emaDf = pd.DataFrame()
     emaDf['OrigClose']=stockDf['Close']
+    emaDf['OrigVolume']=stockDf['Volume']
     emaDf['TradeDate']=stockDf['TradeDate']
     emaDf['PctChg'] = stockDf['Close'].pct_change(periods=lookAheadDays)
     emaDf['index'] = stockDf.index
@@ -59,10 +60,10 @@ def initialize(context, xdata=None, xticker=None, xstart='20130101', xend='20161
     context.pos = 0
     context.pos_bar = 0
     context.pos_price = 0
-    context.max_profit = 0.3
-    context.max_loss = 0.15
-    context.max_hold = 5
-    context.max_position_rate = 0.2
+    context.max_profit = 0.1
+    context.max_loss = 0.05
+    context.max_hold = 3
+    context.max_position_rate = 0.9
     if xdata is not None:
         context.data = xdata
     else:
@@ -107,7 +108,7 @@ def handle_data(context, data):
 
     # Save values for later inspection
     kargs = {context.ticker:data.current(context.sym, "price"),
-            'pred':pred*50,
+            'pred':pred*10,
             'pos':context.pos,
             }
     record(**kargs)
