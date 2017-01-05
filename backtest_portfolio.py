@@ -5,6 +5,7 @@ import pandas as pd
 import talib as ta
 from zipline.api import order, record, symbol
 from zipline.utils.factory import load_bars_from_yahoo
+from zipline/utils/calendars/calendar_utils import get_calendar, register_calendar
 
 def prepare_data(tickers, start='', end=''):
     assert isinstance(tickers, list)
@@ -27,12 +28,12 @@ def predict(inputHisDf, windowSize=20):
     if std < 0.05 or std > 50 or stdRate < 0.005 or stdRate > 0.12:
         return 0
     trendWindow = 10
-    tmpStdGap = stdRate*100
 
-    stdGap = 1.25 if tmpStdGap < 1 else 1.5 if tmpStdGap < 1.5 else 2
+    stdGap = 1.25 + (stdRate-0.005)/(0.12-0.005)
     hisDf = inputHisDf.tail(windowSize+1)
     pU, pM, pL = ta.BBANDS(hisDf['close'].head(windowSize).astype(float).values, timeperiod=trendWindow, nbdevup=stdGap, nbdevdn=stdGap)
     volU, volM, volL = ta.BBANDS(hisDf['volume'].head(windowSize).astype(float).values, timeperiod=trendWindow, nbdevup=stdGap, nbdevdn=stdGap)
+    cci = ta.CCI(hisDf['high'].astype(float).values, hisDf['low'].astype(float).values, hisDf['close'].astype(float).values, timeperiod=trendWindow)
     preP = hisDf['close'].iat[-2]
     curP = hisDf['close'].iat[-1]
 
@@ -43,7 +44,7 @@ def predict(inputHisDf, windowSize=20):
     pMSlope = _array_slope(pM[-trendWindow:])
     volUSlope = _array_slope(volU[-trendWindow:])
     volMSlope = _array_slope(volM[-trendWindow:])
-    if volMSlope > 0: #goes upper with larger std
+    if cci[-1] < -100: 
         if curP > pL[-1] and preP < pL[-1]:
             return 1
     if curP < pU[-1] and preP > pU[-1]:
@@ -196,6 +197,31 @@ def analyze(results=None, symbol=None):
 
     plt.show()
 
+def load_t(trading_day, trading_days, bm_symbol):
+    # dates = pd.date_range('2001-01-01 00:00:00', periods=365, tz="Asia/Shanghai")
+    bm = pd.Series(data=np.random.random_sample(len(trading_days)), index=trading_days)
+    tr = pd.DataFrame(data=np.random.random_sample((len(trading_days), 7)), index=trading_days,
+                      columns=['1month', '3month', '6month', '1year', '2year', '3year', '10year'])
+    return bm, tr
+'''
+equities_t = make_simple_equity_info(sids=[6001, 6002], start_date=pd.to_datetime("2001-01-01 00:00:00"),
+                                     end_date=pd.to_datetime("2002-01-01 00:00:00"), symbols=['AA', 'CC'])
+exchanges_t = pd.DataFrame({'exchange': ['HS_SZ'], 'timezone': ['Asia/Shanghai']})
+'''
+trading.environment = TradingEnvironment(load=load_t, bm_symbol='^HSI', exchange_tz='Asia/Shanghai')
+'''trading.environment.write_data(equities=equities_t, exchanges=exchanges_t)'''
+
+# Bug in code doesn't set tz if these are not specified
+# (finance/trading.py:SimulationParameters.calculate_first_open[close])
+# .tz_localize("Asia/Shanghai").tz_convert("UTC")
+a = pd.to_datetime("2001-01-01 00:00:00").tz_localize("Asia/Shanghai")
+sim_params = create_simulation_parameters(
+    start=pd.to_datetime("2001-01-01 00:00:00").tz_localize("Asia/Shanghai"),
+    end=pd.to_datetime("2001-09-21 00:00:00").tz_localize("Asia/Shanghai"),
+    data_frequency="daily", emission_rate="daily", env=trading.environment)
+
+algor_obj = TradingAlgorithm(initialize=initialize, handle_data=handle_data,
+                             sim_params=sim_params, env=trading.environment)
 
 if __name__ =='__main__':
     import sys
